@@ -5,7 +5,7 @@
 ## 功能
 
 - **一次性初始化**：透過 `/obsidian-memory-init` 指令設定 Obsidian vault 路徑，設定值寫入 `~/.claude/obsidian-memory/config.json`。
-- **自動封存**：每次對話結束（`SessionEnd`）時，hook 會呼叫 `claude -p`（使用 Haiku 模型）產生一份第三人稱摘要，並以繁體中文寫入 vault 中對應專案的資料夾。
+- **自動封存**：每次對話結束（`SessionEnd`）時，hook 會呼叫 `claude -p`（使用 Haiku 模型）產生一份第三人稱摘要，並以繁體中文寫入 vault 中對應專案的資料夾；檔案同時保留該次對話中使用者輸入的原始提示詞全文（逐條列出，不經摘要）。
 - **依專案分類**：封存路徑為 `<vaultPath>/<archiveSubfolder>/<專案名稱>/`，每個工作目錄（依 basename 判斷）各自獨立存放。
 - **標準命名規則**：檔名格式為 `{YYYY-MM-DD}-{HHMMSS}-{session_id 前 8 碼}.md`，避免手動命名造成的重複或不一致。
 

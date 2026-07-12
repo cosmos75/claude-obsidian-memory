@@ -44,7 +44,7 @@ def extract_turns(transcript_path):
                         text_parts.append(block.get("text", ""))
             text = "\n".join(t for t in text_parts if t).strip()
             if text:
-                turns.append(f"{role.upper()}: {text}")
+                turns.append((role, text))
     return turns
 
 
@@ -101,11 +101,12 @@ def main():
     if not turns:
         return
 
-    transcript_text = "\n\n".join(turns)
+    transcript_text = "\n\n".join(f"{role.upper()}: {text}" for role, text in turns)
     if len(transcript_text) > MAX_TRANSCRIPT_CHARS:
         transcript_text = transcript_text[-MAX_TRANSCRIPT_CHARS:]
 
     summary = summarize(transcript_text)
+    user_prompts = [text for role, text in turns if role == "user"]
 
     project = os.path.basename(cwd.rstrip("/")) or "root"
     target_dir = os.path.join(vault_path, subfolder, project)
@@ -130,7 +131,12 @@ def main():
     with open(filepath, "w") as f:
         f.write(frontmatter)
         f.write(f"# Session {date_str} — {project}\n\n")
-        f.write(summary + "\n")
+        f.write("## Summary\n\n")
+        f.write(summary + "\n\n")
+        f.write("## 使用者提示詞\n\n")
+        for i, p in enumerate(user_prompts, 1):
+            fence = "````" if "```" in p else "```"
+            f.write(f"### 提示詞 {i}\n\n{fence}\n{p}\n{fence}\n\n")
 
 
 if __name__ == "__main__":
