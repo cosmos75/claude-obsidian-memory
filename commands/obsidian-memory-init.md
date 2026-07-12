@@ -19,4 +19,4 @@ Steps:
    ```
    Create the parent directory first if it doesn't exist.
 4. Ensure `<vaultPath>/Claude Code` exists (create if missing) — this is the root folder conversations get archived under, with one subfolder per project (named after the project's working-directory basename).
-5. Confirm to the user that archiving is configured, and that a SessionEnd hook will write an LLM-generated summary to `<vaultPath>/Claude Code/<project-name>/` after each session ends.
+5. Confirm to the user that archiving is configured, and that running `/obsidian-memory-save` writes an LLM-generated summary to `<vaultPath>/Claude Code/<project-name>/` — the first run for a session records the full conversation so far, later runs in the same session only append what happened since the last save.
