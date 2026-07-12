@@ -3,11 +3,22 @@ import json
 import os
 import subprocess
 import sys
+import traceback
 from datetime import datetime
 
 CONFIG_PATH = os.path.expanduser("~/.claude/obsidian-memory/config.json")
+DEBUG_LOG_PATH = os.path.expanduser("~/.claude/obsidian-memory/hook-debug.log")
 SUMMARY_MODEL = "claude-haiku-4-5-20251001"
 MAX_TRANSCRIPT_CHARS = 60000
+NO_RECURSE_ENV = "OBSIDIAN_MEMORY_ARCHIVING"
+
+
+def debug_log(msg):
+    try:
+        with open(DEBUG_LOG_PATH, "a") as f:
+            f.write(f"{datetime.now().isoformat()} {msg}\n")
+    except Exception:
+        pass
 
 
 def load_config():
@@ -61,6 +72,7 @@ def summarize(transcript_text):
         "===LOG START===\n" + transcript_text + "\n===LOG END==="
     )
     try:
+        env = {**os.environ, NO_RECURSE_ENV: "1"}
         result = subprocess.run(
             [
                 "claude", "-p",
@@ -73,6 +85,7 @@ def summarize(transcript_text):
             capture_output=True,
             text=True,
             timeout=120,
+            env=env,
         )
         summary = result.stdout.strip()
         return summary or "(summary generation returned no output)"
@@ -81,31 +94,38 @@ def summarize(transcript_text):
 
 
 def main():
-    hook_input = json.load(sys.stdin)
+    if os.environ.get(NO_RECURSE_ENV) == "1":
+        debug_log("SKIP recursive invocation (from summarize() subprocess)")
+        return
+
+    raw_stdin = sys.stdin.read()
+    hook_input = json.loads(raw_stdin) if raw_stdin.strip() else {}
     session_id = hook_input.get("session_id", "unknown")
     transcript_path = hook_input.get("transcript_path")
     cwd = hook_input.get("cwd") or os.getcwd()
+    reason = hook_input.get("reason", "unknown")
+    debug_log(f"HOOK FIRED session={session_id} reason={reason} cwd={cwd} transcript={transcript_path}")
 
     config = load_config()
     if not config:
+        debug_log("ABORT no config file")
         return
     vault_path = config.get("vaultPath")
     subfolder = config.get("archiveSubfolder", "Claude Code")
     if not vault_path or not os.path.isdir(vault_path):
+        debug_log(f"ABORT vault path invalid: {vault_path!r}")
         return
 
     if not transcript_path or not os.path.exists(transcript_path):
+        debug_log(f"ABORT transcript missing: {transcript_path!r}")
         return
 
     turns = extract_turns(transcript_path)
     if not turns:
+        debug_log("ABORT no turns extracted from transcript")
         return
+    debug_log(f"proceeding: {len(turns)} turns extracted, writing archive")
 
-    transcript_text = "\n\n".join(f"{role.upper()}: {text}" for role, text in turns)
-    if len(transcript_text) > MAX_TRANSCRIPT_CHARS:
-        transcript_text = transcript_text[-MAX_TRANSCRIPT_CHARS:]
-
-    summary = summarize(transcript_text)
     user_prompts = [text for role, text in turns if role == "user"]
 
     project = os.path.basename(cwd.rstrip("/")) or "root"
@@ -128,19 +148,34 @@ def main():
         "---\n\n"
     )
 
-    with open(filepath, "w") as f:
-        f.write(frontmatter)
-        f.write(f"# Session {date_str} — {project}\n\n")
-        f.write("## Summary\n\n")
-        f.write(summary + "\n\n")
-        f.write("## 使用者提示詞\n\n")
-        for i, p in enumerate(user_prompts, 1):
-            fence = "````" if "```" in p else "```"
-            f.write(f"### 提示詞 {i}\n\n{fence}\n{p}\n{fence}\n\n")
+    def write_note(summary_text):
+        with open(filepath, "w") as f:
+            f.write(frontmatter)
+            f.write(f"# Session {date_str} — {project}\n\n")
+            f.write("## Summary\n\n")
+            f.write(summary_text + "\n\n")
+            f.write("## 使用者提示詞\n\n")
+            for i, p in enumerate(user_prompts, 1):
+                fence = "````" if "```" in p else "```"
+                f.write(f"### 提示詞 {i}\n\n{fence}\n{p}\n{fence}\n\n")
+
+    # Write the note with prompts immediately, before the slow summarize()
+    # subprocess call, so a hard process kill (e.g. app quit) during
+    # summarization still leaves the prompts archived.
+    write_note("(summary pending...)")
+    debug_log(f"DONE wrote {filepath} (pending summary)")
+
+    transcript_text = "\n\n".join(f"{role.upper()}: {text}" for role, text in turns)
+    if len(transcript_text) > MAX_TRANSCRIPT_CHARS:
+        transcript_text = transcript_text[-MAX_TRANSCRIPT_CHARS:]
+
+    summary = summarize(transcript_text)
+    write_note(summary)
+    debug_log(f"DONE updated {filepath} with summary")
 
 
 if __name__ == "__main__":
     try:
         main()
     except Exception:
-        pass
+        debug_log("EXCEPTION\n" + traceback.format_exc())
