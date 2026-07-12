@@ -1,6 +1,6 @@
 {
   "name": "obsidian-memory",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Automatically archive Claude Code conversation summaries into a local Obsidian vault, organized per project",
   "author": {
     "name": "cosmos75",
