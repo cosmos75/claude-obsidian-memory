@@ -1,0 +1,19 @@
+{
+  "name": "obsidian-memory",
+  "version": "1.0.0",
+  "description": "Automatically archive Claude Code conversation summaries into a local Obsidian vault, organized per project",
+  "author": {
+    "name": "cosmos75",
+    "url": "https://github.com/cosmos75"
+  },
+  "repository": "https://github.com/cosmos75/claude-obsidian-memory",
+  "license": "MIT",
+  "keywords": [
+    "obsidian",
+    "memory",
+    "archive",
+    "claude-code",
+    "vault",
+    "session-summary"
+  ]
+}

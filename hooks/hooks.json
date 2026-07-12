@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "SessionEnd": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/obsidian_memory_archive.py\"",
+            "timeout": 120
+          }
+        ]
+      }
+    ]
+  }
+}

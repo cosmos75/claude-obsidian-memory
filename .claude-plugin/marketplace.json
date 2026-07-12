@@ -1,0 +1,15 @@
+{
+  "name": "claude-obsidian-memory",
+  "owner": {
+    "name": "cosmos75",
+    "url": "https://github.com/cosmos75"
+  },
+  "plugins": [
+    {
+      "name": "obsidian-memory",
+      "source": "./",
+      "description": "Automatically archive Claude Code conversation summaries into a local Obsidian vault, organized per project",
+      "version": "1.0.0"
+    }
+  ]
+}
