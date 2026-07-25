@@ -51,3 +51,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### 錯誤處理設計
 
 `main()` 內的例外會被印出到 stderr 並以非零狀態結束（不再靜默吞掉）——因為封存現在是使用者主動執行的指令，出錯時應該讓使用者立即看到，而不是像舊版 hook 那樣為了不打斷 session 而刻意隱藏。個別檢查點（vault 未設定、transcript 找不到、沒有新內容等）則印出中文提示訊息並正常結束，不視為錯誤。
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues（`cosmos75/claude-obsidian-memory`），透過 `gh` CLI 操作。見 `docs/agents/issue-tracker.md`。
+
+### Triage labels
+
+五個角色沿用預設名稱，未做任何改名對應。見 `docs/agents/triage-labels.md`。
+
+### Domain docs
+
+單一 context：根目錄的 `CONTEXT.md` 與 `docs/adr/`。見 `docs/agents/domain.md`。
