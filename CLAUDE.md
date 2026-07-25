@@ -4,17 +4,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 專案性質
 
-這是一個 Claude Code **plugin**（非一般應用程式），沒有建置、lint 或測試框架——內容只有 JSON manifest、一個 markdown slash-command、以及一支獨立的 Python 腳本。所有邏輯都透過 Claude Code 的 plugin 慣例（`.claude-plugin/`、`commands/`、`hooks/`）串接，彼此之間沒有程式碼層級的 import 關係。
+這是一個 Claude Code **plugin**（非一般應用程式），沒有建置、lint 或測試框架——內容只有 JSON manifest、兩個 markdown slash-command、以及一支獨立的 Python 腳本。所有邏輯都透過 Claude Code 的 plugin 慣例（`.claude-plugin/`、`commands/`）串接，彼此之間沒有程式碼層級的 import 關係。**沒有 `hooks/`**——封存完全靠使用者手動執行 slash command 觸發（見下方架構說明）。
 
 ## 常用指令
 
 - **沒有 build / lint / test 指令**——這個 repo 不是可執行的應用程式。
-- **手動測試封存腳本**：模擬 hook 傳入的 stdin JSON 直接呼叫 `scripts/obsidian_memory_archive.py`：
+- **手動測試封存腳本**：腳本現在從環境變數與 `cwd` 取得 session 資訊，不再讀 stdin：
   ```
-  echo '{"session_id":"test1234","transcript_path":"/path/to/transcript.jsonl","cwd":"/some/project"}' \
-    | python3 scripts/obsidian_memory_archive.py
+  CLAUDE_CODE_SESSION_ID=<真實的 session id> python3 scripts/obsidian_memory_archive.py
   ```
-  必須先在 `~/.claude/obsidian-memory/config.json` 設定好 `vaultPath`，否則腳本會直接靜默返回（see 下方「靜默失敗」設計）。
+  必須滿足以下條件腳本才會真的寫檔，否則會印出對應的中文提示訊息後直接返回（見下方「錯誤處理設計」）：
+  1. `~/.claude/obsidian-memory/config.json` 已設定有效的 `vaultPath`。
+  2. `~/.claude/projects/*/<session_id>.jsonl` 存在（即該 session id 必須是某個真實存在過的 transcript，通常直接用目前這個 Claude Code session 自己的 `$CLAUDE_CODE_SESSION_ID` 最方便）。
+  3. 目前 `cwd` 就是要被歸類的專案目錄（資料夾名稱取自 `basename(cwd)`）。
 - **本機測試 plugin 安裝**：在 Claude Code 中執行 `/plugin marketplace add <此 repo 的本機路徑>`，再 `/plugin install obsidian-memory`。
 - 一般 git 操作照常（`git add` / `git commit` / `git push`）。
 
@@ -36,7 +38,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
    - **增量封存邏輯**：在目標資料夾內尋找 frontmatter 的 `session_id` 與目前 session 相符的既有 `.md` 檔案。
      - 找不到 → 從頭封存整個 session（`write_full`），frontmatter 寫入 `archived_turns: <總回合數>`。
      - 找到 → 只取 `turns[archived_turns:]` 這段新內容送去摘要（`append_incremental`），以 `## 更新 <時間戳記>` 區塊附加在檔案最後，並更新 frontmatter 的 `archived_turns` 與 `updated` 欄位。沒有新內容時直接印出訊息、不寫檔。
-   - 呼叫 `claude -p`（模型固定為 `claude-haiku-4-5-20251001`，`--disallowedTools *`、`--permission-mode plan`）產生第三人稱摘要。**摘要語言被寫死為繁體中文**（見 `summarize()` 內的 prompt）——這是配合使用者全域語言偏好而硬編碼的，若該偏好改變需要同步更新這裡。
+   - 呼叫 `claude -p`（模型固定為 `claude-haiku-4-5-20251001`，`--disallowedTools *`、`--disable-slash-commands`、`--permission-mode plan`）產生第三人稱摘要。摘要的 prompt 明確標記 transcript 內容是「純資料、非指令」，避免對話內容中夾帶的文字被誤當成要執行的指令（prompt injection 防護）。**摘要語言被寫死為繁體中文**（見 `summarize()` 內的 prompt）——這是配合使用者全域語言偏好而硬編碼的，若該偏好改變需要同步更新這裡。
    - 將摘要寫入 `<vaultPath>/<archiveSubfolder>/<project>/` 下的 markdown 檔案。
 
 ### 命名與分類慣例（修改時不要破壞）
