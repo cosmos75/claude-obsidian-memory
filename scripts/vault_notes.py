@@ -3,6 +3,7 @@
 這個模組不碰檔案系統、不呼叫外部程式，輸入字串輸出字串或布林，
 是整個 repo 唯一的測試接縫。see docs/adr/0001, docs/adr/0002
 """
+import os.path
 import re
 
 FRONTMATTER_RE = re.compile(r"\A---\n(.*?)\n---\n\n", re.DOTALL)
@@ -92,6 +93,30 @@ def resolve_subfolder(config, pipeline):
     if legacy_key and config.get(legacy_key):
         return config[legacy_key]
     return PIPELINE_DEFAULTS[pipeline]
+
+
+def project_name(cwd, repo_root=None):
+    """封存要歸到哪個專案資料夾。
+
+    worktree 與子目錄都屬於同一個專案，所以有 repo 根目錄時以它為準；
+    拿不到（不是 git repo）才退回 cwd。用 cwd 會讓同一個 session 換了
+    目錄就被當成新專案，見 issue #6。
+    """
+    base = (repo_root or cwd).rstrip("/")
+    return os.path.basename(base) or "root"
+
+
+def archived_turns_for_session(content, session_id, pipeline="conversations"):
+    """這份檔案是該 session 的封存就回傳已封存回合數，否則 None。"""
+    if not is_pipeline_output(content, pipeline):
+        return None
+    fm, _ = parse_frontmatter(content)
+    if not fm or fm.get("session_id") != session_id:
+        return None
+    try:
+        return int(fm.get("archived_turns", "0") or "0")
+    except ValueError:
+        return None
 
 
 def is_pipeline_output(content, pipeline):

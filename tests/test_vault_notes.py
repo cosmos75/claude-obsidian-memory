@@ -6,8 +6,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 
 from vault_notes import (  # noqa: E402
     HUMAN_BOUNDARY,
+    archived_turns_for_session,
     is_pipeline_output,
     merge_note,
+    project_name,
     resolve_subfolder,
     split_human_region,
 )
@@ -144,6 +146,62 @@ class ResolveSubfolder(unittest.TestCase):
     def test_unknown_pipeline_raises(self):
         with self.assertRaises(KeyError):
             resolve_subfolder({}, "bookmarks")
+
+
+class ProjectName(unittest.TestCase):
+    def test_repo_root_wins_over_cwd(self):
+        # worktree 的 cwd 在 repo 底下很深的地方，專案名仍該是 repo 的名字
+        self.assertEqual(
+            project_name("/home/me/proj/.claude/worktrees/feat-x", "/home/me/proj"),
+            "proj",
+        )
+
+    def test_subdirectory_maps_to_the_same_project(self):
+        self.assertEqual(project_name("/home/me/proj/src/deep", "/home/me/proj"), "proj")
+
+    def test_falls_back_to_cwd_outside_a_repo(self):
+        self.assertEqual(project_name("/home/me/notes"), "notes")
+
+    def test_trailing_slash_is_ignored(self):
+        self.assertEqual(project_name("/home/me/proj/", None), "proj")
+
+    def test_filesystem_root_has_a_name(self):
+        self.assertEqual(project_name("/"), "root")
+
+
+class ArchivedTurnsForSession(unittest.TestCase):
+    SESSION = "8b1fbf5c-36fc-4330-9e41-66c03b31d12b"
+
+    def archive(self, session_id, turns, source="claude-code"):
+        return (
+            f"---\nsource: {source}\nsession_id: {session_id}\n"
+            f"archived_turns: {turns}\n---\n\n# Session\n"
+        )
+
+    def test_matching_session_returns_turn_count(self):
+        content = self.archive(self.SESSION, 142)
+        self.assertEqual(archived_turns_for_session(content, self.SESSION), 142)
+
+    def test_other_session_returns_none(self):
+        content = self.archive("some-other-session", 10)
+        self.assertIsNone(archived_turns_for_session(content, self.SESSION))
+
+    def test_user_file_returns_none_even_with_matching_session_id(self):
+        # 沒有來源標記就是使用者的檔案，不該被當成封存接續下去（ADR-0002）
+        content = f"---\nsession_id: {self.SESSION}\narchived_turns: 99\n---\n\n# 我的筆記\n"
+        self.assertIsNone(archived_turns_for_session(content, self.SESSION))
+
+    def test_other_pipelines_output_returns_none(self):
+        content = self.archive(self.SESSION, 5, source="github-stars")
+        self.assertIsNone(archived_turns_for_session(content, self.SESSION))
+
+    def test_missing_turn_count_reads_as_zero(self):
+        content = f"---\nsource: claude-code\nsession_id: {self.SESSION}\n---\n\n# S\n"
+        self.assertEqual(archived_turns_for_session(content, self.SESSION), 0)
+
+    def test_non_numeric_turn_count_returns_none(self):
+        content = self.archive(self.SESSION, "壞掉的值")
+        self.assertIsNone(archived_turns_for_session(content, self.SESSION))
 
 
 class IsPipelineOutput(unittest.TestCase):
