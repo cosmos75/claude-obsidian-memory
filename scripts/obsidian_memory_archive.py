@@ -2,16 +2,23 @@
 import glob
 import json
 import os
-import re
 import subprocess
 import sys
 from datetime import datetime
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from vault_notes import (  # noqa: E402
+    PIPELINE_SOURCES,
+    is_pipeline_output,
+    parse_frontmatter,
+    resolve_subfolder,
+)
+
 CONFIG_PATH = os.path.expanduser("~/.claude/obsidian-memory/config.json")
 SUMMARY_MODEL = "claude-haiku-4-5-20251001"
 MAX_TRANSCRIPT_CHARS = 60000
-
-FRONTMATTER_RE = re.compile(r"\A---\n(.*?)\n---\n\n", re.DOTALL)
+PIPELINE = "conversations"
 
 
 def load_config():
@@ -88,24 +95,14 @@ def summarize(transcript_text, incremental):
         return f"(摘要產生失敗：{e})"
 
 
-def parse_frontmatter(content):
-    m = FRONTMATTER_RE.match(content)
-    if not m:
-        return None, content
-    fm = {}
-    for line in m.group(1).splitlines():
-        if ":" in line:
-            k, v = line.split(":", 1)
-            fm[k.strip()] = v.strip()
-    return fm, content[m.end():]
-
-
 def find_existing_archive(target_dir, session_id):
     for path in sorted(glob.glob(os.path.join(target_dir, "*.md"))):
         try:
             with open(path) as f:
                 content = f.read()
         except OSError:
+            continue
+        if not is_pipeline_output(content, PIPELINE):
             continue
         fm, _ = parse_frontmatter(content)
         if fm and fm.get("session_id") == session_id:
@@ -134,7 +131,7 @@ def write_full(filepath, project, cwd, session_id, now, turns, summary):
         f"session_id: {session_id}\n"
         f"cwd: {cwd}\n"
         f"archived_turns: {len(turns)}\n"
-        "source: claude-code\n"
+        f"source: {PIPELINE_SOURCES[PIPELINE]}\n"
         "---\n\n"
     )
     with open(filepath, "w") as f:
@@ -178,7 +175,7 @@ def main():
         print("尚未設定 Obsidian vault，請先執行 /obsidian-memory-init。")
         return
     vault_path = config.get("vaultPath")
-    subfolder = config.get("archiveSubfolder", "Claude Code")
+    subfolder = resolve_subfolder(config, PIPELINE)
     if not vault_path or not os.path.isdir(vault_path):
         print(f"設定的 vault 路徑無效：{vault_path!r}，請重新執行 /obsidian-memory-init。")
         return
