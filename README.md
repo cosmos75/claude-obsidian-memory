@@ -10,6 +10,7 @@
   - **同一個 session 再次執行**：只封存上次封存之後新增的內容，附加到既有檔案，不重複記錄。
 - **依專案分類**：封存路徑為 `<vaultPath>/<archiveSubfolder>/<專案名稱>/`，每個工作目錄（依 basename 判斷）各自獨立存放。
 - **標準命名規則**：檔名格式為 `{YYYY-MM-DD}-{HHMMSS}-{session_id 前 8 碼}.md`，避免手動命名造成的重複或不一致。
+- **GitHub Stars 匯入**：執行 `/stars-to-obsidian` 時，拉取目前 GitHub 帳號 star 過的所有 repo，逐一抓 README 分析用途、安裝方式、適用平台後依主題分類寫入 `<vaultPath>/GitHub Stars/`，並產生一份分類索引筆記；預設沿用 `/obsidian-memory-init` 設定的同一個 vault 路徑。
 
 ## 安裝
 
@@ -34,6 +35,14 @@
 
 摘要會寫入 `<vault>/Claude Code/<專案名稱>/` 資料夾；同一個 session 內重複執行只會附加新內容。
 
+想把 GitHub star 過的 repo 整理進同一個 vault，隨時執行：
+
+```
+/stars-to-obsidian
+```
+
+預設處理最近 50 個 star（按時間倒序），可加 `--limit all` 處理全部、`--refresh` 覆蓋已存在的筆記、`--no-readme` 跳過 README 深度分析加速執行。筆記會寫入 `<vault>/GitHub Stars/`，並依主題分類產生索引筆記 `GitHub Stars.md`。
+
 ## 檔案結構
 
 ```
@@ -43,6 +52,7 @@
 commands/
   obsidian-memory-init.md   # /obsidian-memory-init 指令
   obsidian-memory-save.md   # /obsidian-memory-save 指令
+  stars-to-obsidian.md      # /stars-to-obsidian 指令
 scripts/
   obsidian_memory_archive.py  # 實際執行封存與摘要產生的腳本
 ```
