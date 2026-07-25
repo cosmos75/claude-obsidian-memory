@@ -10,8 +10,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from vault_notes import (  # noqa: E402
     PIPELINE_SOURCES,
-    is_pipeline_output,
+    archived_turns_for_session,
     parse_frontmatter,
+    project_name,
     resolve_subfolder,
 )
 
@@ -95,20 +96,54 @@ def summarize(transcript_text, incremental):
         return f"(摘要產生失敗：{e})"
 
 
-def find_existing_archive(target_dir, session_id):
-    for path in sorted(glob.glob(os.path.join(target_dir, "*.md"))):
+def git_main_checkout(cwd):
+    """cwd 所屬 repo 的主 checkout 根目錄；不是 repo（或沒有 git）就回傳 None。
+
+    刻意用 `--git-common-dir` 而不是 `--show-toplevel`：後者在 worktree 裡回傳的是
+    worktree 自己的根目錄，專案名就會變成 worktree 的名字，等於沒修到 issue #6。
+    `--git-common-dir` 在 worktree 裡回傳主 repo 的 `.git`，取其父目錄才是主 checkout；
+    在主 checkout 裡它回傳相對路徑 `.git`，所以要先相對 cwd 解析。
+    """
+    try:
+        result = subprocess.run(
+            ["git", "-C", cwd, "rev-parse", "--git-common-dir"],
+            capture_output=True, text=True, timeout=5,
+        )
+    except Exception:
+        return None
+    if result.returncode != 0:
+        return None
+    common_dir = result.stdout.strip()
+    if not common_dir:
+        return None
+    return os.path.dirname(os.path.abspath(os.path.join(cwd, common_dir)))
+
+
+def find_existing_archive(archive_root, session_id):
+    """在整個封存根目錄底下找這個 session 的封存，不限於當前專案資料夾。
+
+    只看當前資料夾的話，同一個 session 換了 cwd（例如進了 worktree）就會
+    再開一份新封存，把先前的內容整段重記一次。見 issue #6。
+    """
+    matches = []
+    for path in sorted(glob.glob(os.path.join(archive_root, "**", "*.md"), recursive=True)):
         try:
             with open(path) as f:
                 content = f.read()
         except OSError:
             continue
-        if not is_pipeline_output(content, PIPELINE):
-            continue
-        fm, _ = parse_frontmatter(content)
-        if fm and fm.get("session_id") == session_id:
-            archived_turns = int(fm.get("archived_turns", "0") or "0")
-            return path, archived_turns
-    return None
+        turns = archived_turns_for_session(content, session_id, PIPELINE)
+        if turns is not None:
+            matches.append((path, turns))
+    if not matches:
+        return None
+    # 已經散出多份時取最完整的那份，接續它才不會把重複的內容再記一次。
+    matches.sort(key=lambda m: m[1], reverse=True)
+    if len(matches) > 1:
+        others = "、".join(os.path.relpath(p, archive_root) for p, _ in matches[1:])
+        print(f"注意：這個 session 另有 {len(matches) - 1} 份較舊的封存（{others}），"
+              f"本次接續最完整的那份。")
+    return matches[0]
 
 
 def render_prompts(turns, start_index, heading_level):
@@ -191,14 +226,17 @@ def main():
         return
 
     cwd = os.getcwd()
-    project = os.path.basename(cwd.rstrip("/")) or "root"
-    target_dir = os.path.join(vault_path, subfolder, project)
-    os.makedirs(target_dir, exist_ok=True)
+    archive_root = os.path.join(vault_path, subfolder)
 
     now = datetime.now().astimezone()
-    existing = find_existing_archive(target_dir, session_id)
+    existing = find_existing_archive(archive_root, session_id)
 
     if existing is None:
+        # 只有新建封存才需要決定專案資料夾；接續既有封存時寫回原處，
+        # 不重新歸類，所以那條路徑不必付 git 子行程的代價。
+        project = project_name(cwd, git_main_checkout(cwd))
+        target_dir = os.path.join(archive_root, project)
+        os.makedirs(target_dir, exist_ok=True)
         short_id = session_id[:8]
         filepath = os.path.join(
             target_dir,

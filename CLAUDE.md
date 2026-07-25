@@ -70,7 +70,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### 命名與分類慣例（修改時不要破壞）
 
 - **檔名格式**：`{YYYY-MM-DD}-{HHMMSS}-{session_id 前 8 碼}.md`，只在該 session 第一次封存時決定，之後同一個 session 的增量封存都寫回同一個檔案。
-- **資料夾分類**：以 `basename(cwd)` 作為專案資料夾名稱，而非任何設定檔內的專案識別碼。
+- **資料夾分類**：專案資料夾名取自 **git repo 主 checkout 的 basename**（`vault_notes.project_name()`），不是 `basename(cwd)`——否則同一個 session 進了 worktree 或子目錄就會被當成新專案，見 issue #6。不在 git repo 裡才退回 cwd。
+- **尋找既有封存**：`find_existing_archive()` 掃整個封存根目錄找 `session_id`，不限於當前專案資料夾；命中多份時取 `archived_turns` 最大的那份並提醒使用者。**不要改回只掃當前資料夾**，那正是 issue #6 的成因。
 - **Frontmatter 欄位**：`date`（首次建立時間，ISO 8601 含時區偏移）、`updated`（最後一次封存時間）、`project`、`session_id`、`cwd`、`archived_turns`（已封存的對話回合數，用來判斷下次要從哪裡繼續）、`source: claude-code`。
 
 ### 錯誤處理設計
