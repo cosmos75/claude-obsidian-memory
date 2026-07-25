@@ -226,13 +226,15 @@ def main():
         return
 
     cwd = os.getcwd()
-    project = project_name(cwd, git_main_checkout(cwd))
     archive_root = os.path.join(vault_path, subfolder)
 
     now = datetime.now().astimezone()
     existing = find_existing_archive(archive_root, session_id)
 
     if existing is None:
+        # 只有新建封存才需要決定專案資料夾；接續既有封存時寫回原處，
+        # 不重新歸類，所以那條路徑不必付 git 子行程的代價。
+        project = project_name(cwd, git_main_checkout(cwd))
         target_dir = os.path.join(archive_root, project)
         os.makedirs(target_dir, exist_ok=True)
         short_id = session_id[:8]
