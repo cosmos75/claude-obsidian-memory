@@ -11,17 +11,18 @@ argument-hint: [--vault <路径>] [--limit <N>|all] [--no-readme] [--refresh]
 
 用户可能传入以下参数，未传则用默认值：
 
-- `--vault <路径>`：Obsidian 库根目录。**未传时，优先读取 `~/.claude/obsidian-memory/config.json` 的 `vaultPath`（与 `/obsidian-memory-init` 共用同一份设定）；该文件不存在或没有 `vaultPath` 才 fallback 到 `~/Obsidian`，并务必让用户确认真实路径。**
+- `--vault <路径>`：Obsidian 库根目录。**未传时读取 `~/.claude/obsidian-memory/config.json` 的 `vaultPath`。** vault 路径是所有管道共用的设定，不是这条管道的私产——读不到就是还没初始化，该停下来叫用户跑 `/obsidian-memory-init`，**不要猜一个路径继续做**。
 - `--limit <N>`：只处理前 N 个（按 star 时间倒序）。默认 `50`。设为 `all` 处理全部。
 - `--no-readme`：跳过 README 抓取，只用 metadata 做粗分析（快、省 token）。**默认会抓 README 做深度分析。**
-- `--refresh`：覆盖已存在的笔记。默认跳过已存在的，保护用户手改内容。
+- `--refresh`：重新生成已存在笔记的机器区。**用户写在 `## 我的笔记` 以下的内容不受影响**——合并由脚本负责，见步骤 3。默认跳过已存在的笔记。
 
 ## 前置检查（先做，别跳过）
 
 1. 运行 `gh auth status`，确认已登录。没登录就停下让用户先 `gh auth login`。
-2. 解析 vault 路径：若传了 `--vault` 用该值；否则读取 `~/.claude/obsidian-memory/config.json` 的 `vaultPath`（该配置文件也可能不存在——如果不存在，提示用户可以先执行 `/obsidian-memory-init` 设定一次，或直接用 `--vault` 指定，再继续）；仍然没有就用默认值 `~/Obsidian`。
-3. 确认 vault 路径存在（`ls <vault>`）。不存在就停下问用户。
-4. 在 vault 下建目录：`<vault>/GitHub Stars/`。
+2. 解析 vault 路径：传了 `--vault` 就用该值；否则读 `~/.claude/obsidian-memory/config.json` 的 `vaultPath`。两者都没有就停下，请用户先执行 `/obsidian-memory-init`。
+3. 解析子资料夹：读同一份 config 的 `pipelines.githubStars.subfolder`，没有就用默认值 `GitHub Stars`。下文一律以 `<stars-dir>` 代表 `<vault>/<该子资料夹>/`。
+4. 确认 vault 路径存在（`ls <vault>`）。不存在就停下问用户。
+5. 建立 `<stars-dir>`（已存在就略过）。
 
 ## 步骤 1：拉取 star 列表
 
@@ -31,7 +32,7 @@ argument-hint: [--vault <路径>] [--limit <N>|all] [--no-readme] [--refresh]
 gh api user/starred --paginate \
   -H "Accept: application/vnd.github.star+json" \
   --jq '.[] | {starred_at, full_name: .repo.full_name, description: .repo.description, language: .repo.language, stars: .repo.stargazers_count, url: .repo.html_url, topics: .repo.topics, pushed_at: .repo.pushed_at}' \
-  > "<vault>/GitHub Stars/.stars-raw.ndjson"
+  > "<stars-dir>/.stars-raw.ndjson"
 ```
 
 结果是 NDJSON（每行一个 JSON）。统计总数，若 `--limit` 未设为 `all`，只取前 N 行处理。
@@ -54,9 +55,9 @@ gh api user/starred --paginate \
 
 ## 步骤 3：为每个仓库写一篇笔记
 
-路径 `<vault>/GitHub Stars/<owner>__<name>.md`（`/` 用 `__` 替代避免建子目录）。
+路径 `<stars-dir>/<owner>__<name>.md`（`/` 用 `__` 替代避免建子目录）。
 
-**已存在且未传 `--refresh` 就跳过。**
+**已存在且未传 `--refresh` 就跳过。**传了 `--refresh` 则重新生成机器区，人类区由合并脚本保留。
 
 除非传了 `--no-readme`，先抓完整 README（最多 ~12KB，足够覆盖安装/用法章节）：
 ```bash
@@ -71,10 +72,11 @@ gh api "repos/<full_name>/readme" --jq '.content' | base64 -d | head -c 12288
 - **基本用法**：从 quickstart / usage 段落里抽一两条最小可用示例命令或配置片段。
 - **依赖 / 前置条件**：需要先装什么、需要什么服务（如 Redis、Postgres）、需不需要 API key。
 
-笔记模板（正文用中文，命令原样保留；README 原文别整段照抄，用自己的话概括）：
+笔记模板（正文用中文，命令原样保留；README 原文别整段照抄，用自己的话概括）。**整份模板就是「机器区」**，最后固定附上人类区的分界标题：
 
 ```markdown
 ---
+source: github-stars
 repo: {full_name}
 url: {url}
 language: {language}
@@ -128,16 +130,37 @@ brew install ... / pip install ... / go install ...
 - 主题：{topics}
 
 [在 GitHub 打开]({url})
+
+## 我的笔记
+
+（这行以下是你的地盘，重新生成时不会被动到）
 ```
+
+### 怎么写进去（不要自己写档）
+
+**绝对不要直接用 Write 工具写目标笔记**——那会把用户在人类区写的东西冲掉。改成两步：
+
+1. 把上面生成好的**机器区全文**写到一个暂存档，例如 `/tmp/star-note.md`。
+2. 呼叫合并脚本，由它负责读旧档、切出人类区、重组后写回：
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/merge_note.py" githubStars \
+  "<stars-dir>/<owner>__<name>.md" /tmp/star-note.md
+```
+
+脚本会自己判断该建新档还是保留人类区，并把结果印出来。若目标档案没有 `source: github-stars` 标记，它会拒绝写入——那代表那是用户自己的档案（或还没跑过回填），把脚本的讯息原样回报给用户，不要绕过它。
 
 安装/用法段落**只写 README 里确实给出的内容**，README 没提就写「README 未说明」，不要凭空编命令。
 
 ## 步骤 4：生成分类索引（MOC）
 
-写 `<vault>/GitHub Stars/GitHub Stars.md`，按分类分组，每个仓库一行双链 + 一句话点评：
+索引档名固定为 **`0-GitHub Stars.md`**（`0-` 前缀让它排在资料夹顶端），完整路径 `<stars-dir>/0-GitHub Stars.md`。索引同样是管道产物，走跟笔记一样的合并流程写入（`merge_note.py githubStars ...`），不要直接 Write。
+
+按分类分组，每个仓库一行双链 + 一句话点评：
 
 ```markdown
 ---
+source: github-stars
 tags: [moc, github-star]
 updated: {今天日期}
 ---
@@ -154,6 +177,10 @@ updated: {今天日期}
 - ...
 
 （每个分类一节，空分类不列）
+
+## 我的笔记
+
+（这行以下是你的地盘，重新生成时不会被动到）
 ```
 
 ## 收尾
@@ -165,6 +192,8 @@ updated: {今天日期}
 
 ## 硬性规则
 
-- 绝不覆盖用户手改过的笔记（除非 `--refresh`）。
+- **一律透过 `merge_note.py` 写档，不要自己 Write 目标笔记。** 这是用户人类区内容的唯一保障，见 `docs/adr/0001-machine-region-merged-by-script.md`。
+- 脚本拒绝写入时不要绕过它——那代表目标档案缺来源标记，可能是用户自己的档案，或既有笔记还没跑过 `scripts/backfill_source_marker.py` 回填。
+- vault 路径读不到就停下来叫用户初始化，不要猜路径。
 - 一次别改太多文件就静默跑完——每处理完一个分类停一下报告进度。
 - README/描述里的原文别整段照抄，用自己的话概括。

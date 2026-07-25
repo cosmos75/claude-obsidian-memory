@@ -9,7 +9,7 @@
       "name": "obsidian-memory",
       "source": "./",
       "description": "Automatically archive Claude Code conversation summaries and GitHub starred repos into a local Obsidian vault, organized per project/topic",
-      "version": "1.2.0"
+      "version": "1.3.0"
     }
   ]
 }
